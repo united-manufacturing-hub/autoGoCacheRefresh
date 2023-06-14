@@ -8,6 +8,7 @@ import (
 	_ "github.com/lib/pq"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"time"
 )
@@ -23,13 +24,15 @@ type Response struct {
 
 func main() {
 	var (
-		host     = flag.String("host", "localhost", "DB host")
-		port     = flag.Int("port", 5432, "DB port")
-		user     = flag.String("user", "", "DB user")
-		password = flag.String("password", "", "DB password")
-		dbname   = flag.String("dbname", "", "DB name")
-		sleep    = flag.Int("sleep", 1, "Sleep time in minutes")
-		workers  = flag.Int("workers", 1, "Number of workers")
+		host      = flag.String("host", "localhost", "DB host")
+		port      = flag.Int("port", 5432, "DB port")
+		user      = flag.String("user", "", "DB user")
+		password  = flag.String("password", "", "DB password")
+		dbname    = flag.String("dbname", "", "DB name")
+		sleep     = flag.Int("sleep", 1, "Sleep time in minutes")
+		workers   = flag.Int("workers", 1, "Number of workers")
+		sleeprmin = flag.Int("sleeprmin", 1, "Sleep time in seconds, after request")
+		sleeprmax = flag.Int("sleeprmax", 60, "Sleep time in seconds, after request")
 	)
 	flag.Parse()
 
@@ -51,7 +54,7 @@ func main() {
 	var workChan = make(chan Index, *workers)
 
 	for i := 0; i < *workers; i++ {
-		go processor(workChan)
+		go processor(workChan, *sleeprmin, *sleeprmax)
 	}
 
 	for {
@@ -81,10 +84,15 @@ func main() {
 	}
 }
 
-func processor(workChan chan Index) {
+func processor(workChan chan Index, minSleep int, maxSleep int) {
 	for {
 		idx := <-workChan
 		process(idx)
+
+		// Sleep random seconds between minSleep and maxSleep
+		sleep := minSleep + rand.Intn(maxSleep-minSleep)
+		log.Printf("Sleeping for %d seconds\n", sleep)
+		time.Sleep(time.Second * time.Duration(sleep))
 	}
 }
 
