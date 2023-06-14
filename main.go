@@ -47,62 +47,74 @@ func main() {
 		log.Fatal(err)
 	}
 
-	rows, err := db.Query(`SELECT path, version FROM public.indexes`)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rows.Close()
+	for {
 
-	for rows.Next() {
-		var idx Index
-		err = rows.Scan(&idx.Path, &idx.Version)
+		var rows *sql.Rows
+		rows, err = db.Query(`SELECT path, version FROM public.indexes`)
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("Processing %s\n", idx.Path)
 
-		var resp *http.Response
-		resp, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@latest", idx.Path))
-		if err != nil {
-			log.Println(err)
-			continue
-		}
+		for rows.Next() {
+			var idx Index
+			err = rows.Scan(&idx.Path, &idx.Version)
+			if err != nil {
+				log.Fatal(err)
+			}
+			log.Printf("Processing %s\n", idx.Path)
 
-		var body []byte
-		body, err = io.ReadAll(resp.Body)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-
-		var r Response
-		err = json.Unmarshal(body, &r)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-
-		resp.Body.Close()
-
-		if r.Version != idx.Version {
-			_, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@v/%s.info", idx.Path, idx.Version))
+			var resp *http.Response
+			resp, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@latest", idx.Path))
 			if err != nil {
 				log.Println(err)
 				continue
 			}
 
-			_, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@v/%s.mod", idx.Path, idx.Version))
+			var body []byte
+			body, err = io.ReadAll(resp.Body)
 			if err != nil {
 				log.Println(err)
 				continue
 			}
 
-			_, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@v/%s.zip", idx.Path, idx.Version))
+			var r Response
+			err = json.Unmarshal(body, &r)
 			if err != nil {
 				log.Println(err)
 				continue
 			}
+
+			resp.Body.Close()
+
+			if r.Version != idx.Version {
+				_, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@v/%s.info", idx.Path, idx.Version))
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+
+				_, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@v/%s.mod", idx.Path, idx.Version))
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+
+				_, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@v/%s.zip", idx.Path, idx.Version))
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+			}
+			log.Printf("Processed %s\n", idx.Path)
 		}
+
+		err = rows.Close()
+		if err != nil {
+			log.Println(err)
+		}
+
+		log.Printf("Sleeping for %d minutes\n", *sleep)
 		time.Sleep(time.Minute * time.Duration(*sleep))
 	}
+
 }
