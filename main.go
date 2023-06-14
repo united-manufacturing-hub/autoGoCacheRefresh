@@ -28,6 +28,7 @@ func main() {
 		user     = flag.String("user", "", "DB user")
 		password = flag.String("password", "", "DB password")
 		dbname   = flag.String("dbname", "", "DB name")
+		sleep    = flag.Int("sleep", 1, "Sleep time in minutes")
 	)
 	flag.Parse()
 
@@ -60,20 +61,25 @@ func main() {
 		}
 		log.Printf("Processing %s\n", idx.Path)
 
-		resp, err := http.Get(fmt.Sprintf("http://localhost:3000/%s/@latest", idx.Path))
+		var resp *http.Response
+		resp, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@latest", idx.Path))
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
+			continue
 		}
 
-		body, err := io.ReadAll(resp.Body)
+		var body []byte
+		body, err = io.ReadAll(resp.Body)
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
+			continue
 		}
 
 		var r Response
 		err = json.Unmarshal(body, &r)
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
+			continue
 		}
 
 		resp.Body.Close()
@@ -81,19 +87,22 @@ func main() {
 		if r.Version != idx.Version {
 			_, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@v/%s.info", idx.Path, idx.Version))
 			if err != nil {
-				log.Fatal(err)
+				log.Println(err)
+				continue
 			}
 
 			_, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@v/%s.mod", idx.Path, idx.Version))
 			if err != nil {
-				log.Fatal(err)
+				log.Println(err)
+				continue
 			}
 
 			_, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@v/%s.zip", idx.Path, idx.Version))
 			if err != nil {
-				log.Fatal(err)
+				log.Println(err)
+				continue
 			}
 		}
-		time.Sleep(1 * time.Minute)
+		time.Sleep(time.Minute * time.Duration(*sleep))
 	}
 }
