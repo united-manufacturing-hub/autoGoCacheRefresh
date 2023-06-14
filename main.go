@@ -29,6 +29,7 @@ func main() {
 		password = flag.String("password", "", "DB password")
 		dbname   = flag.String("dbname", "", "DB name")
 		sleep    = flag.Int("sleep", 1, "Sleep time in minutes")
+		workers  = flag.Int("workers", 1, "Number of workers")
 	)
 	flag.Parse()
 
@@ -47,10 +48,16 @@ func main() {
 		log.Fatal(err)
 	}
 
+	var workChan = make(chan Index, *workers)
+
+	for i := 0; i < *workers; i++ {
+		go processor(workChan)
+	}
+
 	for {
 
 		var rows *sql.Rows
-		rows, err = db.Query(`SELECT path, version FROM public.indexes`)
+		rows, err = db.Query(`SELECT path, version FROM public.indexes ORDER BY RANDOM ()`)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -61,51 +68,7 @@ func main() {
 			if err != nil {
 				log.Fatal(err)
 			}
-			log.Printf("Processing %s\n", idx.Path)
-
-			var resp *http.Response
-			resp, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@latest", idx.Path))
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-
-			var body []byte
-			body, err = io.ReadAll(resp.Body)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-
-			var r Response
-			err = json.Unmarshal(body, &r)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-
-			resp.Body.Close()
-
-			if r.Version != idx.Version {
-				_, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@v/%s.info", idx.Path, idx.Version))
-				if err != nil {
-					log.Println(err)
-					continue
-				}
-
-				_, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@v/%s.mod", idx.Path, idx.Version))
-				if err != nil {
-					log.Println(err)
-					continue
-				}
-
-				_, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@v/%s.zip", idx.Path, idx.Version))
-				if err != nil {
-					log.Println(err)
-					continue
-				}
-			}
-			log.Printf("Processed %s\n", idx.Path)
+			workChan <- idx
 		}
 
 		err = rows.Close()
@@ -116,5 +79,61 @@ func main() {
 		log.Printf("Sleeping for %d minutes\n", *sleep)
 		time.Sleep(time.Minute * time.Duration(*sleep))
 	}
+}
 
+func processor(workChan chan Index) {
+	for {
+		idx := <-workChan
+		process(idx)
+	}
+}
+
+func process(idx Index) {
+	log.Printf("Processing %s\n", idx.Path)
+	var resp *http.Response
+	var err error
+	resp, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@latest", idx.Path))
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	var body []byte
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	var r Response
+	err = json.Unmarshal(body, &r)
+	if err != nil {
+		log.Printf("Failed to unmarshal %s (%v)\n", body, err)
+		return
+	}
+
+	resp.Body.Close()
+
+	if r.Version == idx.Version {
+		return
+	}
+
+	_, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@v/%s.info", idx.Path, idx.Version))
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	_, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@v/%s.mod", idx.Path, idx.Version))
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	_, err = http.Get(fmt.Sprintf("http://localhost:3000/%s/@v/%s.zip", idx.Path, idx.Version))
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	log.Printf("Processed %s\n", idx.Path)
 }
